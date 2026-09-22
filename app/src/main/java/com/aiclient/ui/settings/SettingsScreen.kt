@@ -1,22 +1,59 @@
 package com.aiclient.ui.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.aiclient.R
+import com.aiclient.data.remote.dto.ModelInfo
+import com.aiclient.data.repository.AiRepository
+import com.aiclient.util.SecurePrefs
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    onBackClick: () -> Unit
-) {
+fun SettingsScreen(onBackClick: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val repo = remember { AiRepository(ctx) }
+
+    var apiKey by remember { mutableStateOf(SecurePrefs.getApiKey(ctx)) }
+    var baseUrl by remember { mutableStateOf(SecurePrefs.getBaseUrl(ctx)) }
+    var model by remember { mutableStateOf(SecurePrefs.getModel(ctx)) }
+
+    var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var expanded by remember { mutableStateOf(false) }
+
+    fun loadModels() {
+        if (apiKey.isBlank()) {
+            error = "Сначала введи API-ключ"
+            return
+        }
+        loading = true
+        error = null
+        scope.launch {
+            try {
+                models = repo.listModels()
+                if (models.isEmpty()) error = "API вернул пустой список"
+            } catch (e: Exception) {
+                error = e.message ?: e.toString()
+            } finally {
+                loading = false
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -28,84 +65,108 @@ fun SettingsScreen(
                 }
             )
         }
-    ) { paddingValues ->
-        LazyColumn(
+    ) { pad ->
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(pad)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
-                SettingsSection(title = stringResource(R.string.appearance))
-                SettingsItem(
-                    title = stringResource(R.string.theme),
-                    subtitle = stringResource(R.string.system),
-                    icon = Icons.Default.Palette,
-                    onClick = { /* Theme picker */ }
-                )
+            Text("AI Provider", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = {
+                    baseUrl = it
+                    SecurePrefs.setBaseUrl(ctx, it.trim())
+                },
+                label = { Text("Base URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = {
+                    apiKey = it
+                    SecurePrefs.setApiKey(ctx, it.trim())
+                },
+                label = { Text("API Key") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Model", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                IconButton(onClick = { loadModels() }, enabled = !loading) {
+                    if (loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = "Обновить список")
+                    }
+                }
             }
 
-            item {
-                SettingsSection(title = "AI")
-                SettingsItem(
-                    title = stringResource(R.string.model),
-                    subtitle = "GPT-3.5 Turbo",
-                    icon = Icons.Default.SmartToy,
-                    onClick = { /* Model selector */ }
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded }
+            ) {
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { model = it; SecurePrefs.setModel(ctx, it.trim()) },
+                    label = { Text("Модель") },
+                    readOnly = false,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryEditable)
                 )
-                SettingsItem(
-                    title = stringResource(R.string.provider),
-                    subtitle = "OpenAI",
-                    icon = Icons.Default.Cloud,
-                    onClick = { /* Provider selector */ }
-                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    if (models.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("Нажми ⟳ чтобы загрузить") },
+                            onClick = { expanded = false }
+                        )
+                    } else {
+                        models.forEach { m ->
+                            DropdownMenuItem(
+                                text = { Text(m.id) },
+                                onClick = {
+                                    model = m.id
+                                    SecurePrefs.setModel(ctx, m.id)
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
-            item {
-                SettingsSection(title = "Data")
-                SettingsItem(
-                    title = stringResource(R.string.memory),
-                    subtitle = "Manage memory",
-                    icon = Icons.Default.Memory,
-                    onClick = { /* Memory settings */ }
-                )
+            Text(
+                "Моделей: ${models.size}   •   Default: ${SecurePrefs.DEFAULT_MODEL}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            error?.let {
+                Text("⚠️ $it", color = MaterialTheme.colorScheme.error)
             }
 
-            item {
-                SettingsSection(title = stringResource(R.string.about))
-                SettingsItem(
-                    title = "Version",
-                    subtitle = "1.0.0",
-                    icon = Icons.Default.Info,
-                    onClick = { /* About */ }
-                )
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            Button(
+                onClick = { loadModels() },
+                enabled = !loading && apiKey.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (loading) "Загрузка…" else "Загрузить модели")
             }
         }
     }
-}
-
-@Composable
-fun SettingsSection(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-    )
-}
-
-@Composable
-fun SettingsItem(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-        leadingContent = {
-            Icon(icon, contentDescription = null)
-        },
-        modifier = Modifier.clickable(onClick = onClick)
-    )
 }
