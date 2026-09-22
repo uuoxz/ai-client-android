@@ -33,12 +33,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "21"
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -96,9 +96,6 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
 
     // Markdown rendering
-    implementation("com.halilibo.compose-richtext:richtext-ui:0.17.0")
-    implementation("com.halilibo.compose-richtext:richtext-ui-material3:0.17.0")
-    implementation("com.halilibo.compose-richtext:richtext-commonmark:0.17.0")
 
     // Security
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
